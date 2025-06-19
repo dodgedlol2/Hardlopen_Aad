@@ -43,6 +43,28 @@ st.markdown("""
     .stSelectbox > div > div {
         background-color: #f0f2f6;
     }
+    .edit-section {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        color: white;
+        margin: 2rem 0;
+    }
+    .quick-entry-form {
+        background: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 10px;
+        border: 2px solid #e9ecef;
+        margin: 1rem 0;
+    }
+    .success-message {
+        background: #d4edda;
+        color: #155724;
+        padding: 1rem;
+        border-radius: 5px;
+        border: 1px solid #c3e6cb;
+        margin: 1rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -186,6 +208,19 @@ def format_time(seconds):
         minutes = int(seconds // 60)
         secs = seconds % 60
         return f"{minutes}:{secs:04.1f}"
+
+def format_time_for_sheets(seconds):
+    """Format time for Google Sheets entry"""
+    if seconds < 60:
+        return f"{seconds:.1f}"
+    else:
+        minutes = int(seconds // 60)
+        secs = seconds % 60
+        return f"{minutes}:{secs:04.1f}"
+
+def format_date_for_sheets(date_obj):
+    """Format date for Google Sheets entry (DD-MM-YY)"""
+    return date_obj.strftime("%d-%m-%y")
 
 def create_performance_chart(data, distance):
     """Create performance over time chart"""
@@ -641,40 +676,215 @@ def create_progress_radar(data):
     
     return fig
 
-# Main app
-def main():
-    st.markdown('<div class="main-header">🏃‍♂️ Dad\'s Running Performance Dashboard</div>', unsafe_allow_html=True)
+def show_data_entry_section():
+    """Show the data entry and editing section"""
+    st.header("📝 Data Management")
     
-    # Load data
-    with st.spinner("Loading running data..."):
+    # Google Sheets link section
+    sheet_id = "1CUM-P3wB2zxHrbmw1JM7vrxtqhtnsasy34NqaIkke_0"
+    sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit"
+    
+    st.markdown("""
+    <div class="edit-section">
+        <h2>🔗 Direct Google Sheets Access</h2>
+        <p>Click the button below to open your Google Sheet and add new running times directly!</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🚀 Open Google Sheets to Add Data", type="primary", use_container_width=True):
+            st.markdown(f"""
+            <script>
+                window.open('{sheet_url}', '_blank');
+            </script>
+            """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+        <div style="text-align: center; margin-top: 1rem;">
+            <a href="{sheet_url}" target="_blank" style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 12px 24px;
+                text-decoration: none;
+                border-radius: 8px;
+                font-weight: bold;
+                display: inline-block;
+                margin: 10px;
+            ">📊 Open Google Sheets</a>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Quick data entry form
+    st.markdown("---")
+    st.subheader("⚡ Quick Data Entry")
+    st.markdown("Enter your running data here, then copy it to your Google Sheet:")
+    
+    with st.container():
+        st.markdown('<div class="quick-entry-form">', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            distance = st.selectbox("Distance", ["100m", "200m", "300m", "400m", "500m"])
+            run_date = st.date_input("Date", value=datetime.now().date())
+        
+        with col2:
+            # Time input with helper text
+            st.markdown("**Time format examples:**")
+            st.markdown("- For seconds: `18.5` (18.5 seconds)")
+            st.markdown("- For minutes: `1:23.4` (1 min 23.4 sec)")
+            
+            time_input = st.text_input("Time", placeholder="e.g., 18.5 or 1:23.4")
+        
+        if st.button("💾 Prepare Entry for Google Sheets", type="secondary"):
+            if time_input and distance:
+                try:
+                    # Parse the time
+                    time_seconds = parse_time_to_seconds(time_input)
+                    if time_seconds:
+                        # Format for Google Sheets
+                        formatted_time = format_time_for_sheets(time_seconds)
+                        formatted_date = format_date_for_sheets(run_date)
+                        
+                        st.markdown('<div class="success-message">', unsafe_allow_html=True)
+                        st.markdown(f"""
+                        **✅ Data prepared successfully!**
+                        
+                        **For {distance}:**
+                        - **Time to enter**: `{formatted_time}`
+                        - **Date to enter**: `{formatted_date}`
+                        - **Parsed time**: {format_time(time_seconds)}
+                        
+                        **Next steps:**
+                        1. Copy the formatted time and date above
+                        2. Click the Google Sheets button
+                        3. Find the correct {distance} columns
+                        4. Paste the data in the next empty row
+                        """)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        # Auto-refresh suggestion
+                        st.info("💡 After adding your data to Google Sheets, refresh this page to see the updated charts!")
+                        
+                    else:
+                        st.error("❌ Could not parse the time format. Please try formats like '18.5' or '1:23.4'")
+                except Exception as e:
+                    st.error(f"❌ Error processing time: {e}")
+            else:
+                st.warning("⚠️ Please enter both distance and time!")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Data format help
+    st.markdown("---")
+    st.subheader("📋 Google Sheets Format Guide")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **Column Headers in your Google Sheet:**
+        - `100m_Time` and `100m_Date`
+        - `200m_Time` and `200m_Date` 
+        - `300m_Time` and `300m_Date`
+        - `400m_Time` and `400m_Date`
+        - `500m_Time` and `500m_Date`
+        """)
+    
+    with col2:
+        st.markdown("""
+        **Time Format Examples:**
+        - `18.5` (18.5 seconds)
+        - `1:23.4` (1 minute 23.4 seconds)
+        - `1.23.4` (1 minute 23.4 seconds)
+        
+        **Date Format:**
+        - `27-12-24` (DD-MM-YY)
+        """)
+    
+    # Current data preview
+    st.markdown("---")
+    st.subheader("👀 Current Data Preview")
+    
+    with st.spinner("Loading current data..."):
         df = load_data()
     
-    if df is None:
-        st.error("Could not load data. Please check the Google Sheets link.")
-        return
+    if df is not None:
+        # Show last few entries
+        st.markdown("**Last 10 entries from your Google Sheet:**")
+        
+        # Clean up the dataframe for display
+        display_df = df.tail(10).copy()
+        
+        # Only show columns that have data
+        cols_with_data = [col for col in display_df.columns if display_df[col].notna().any()]
+        if cols_with_data:
+            display_df = display_df[cols_with_data]
+            st.dataframe(display_df.iloc[::-1], use_container_width=True)  # Reverse to show newest first
+        else:
+            st.info("No data found in the sheet yet. Add some running times to get started!")
+        
+        # Show sheet statistics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            total_entries = 0
+            for distance in ['100m', '200m', '300m', '400m', '500m']:
+                time_col = f"{distance}_Time"
+                if time_col in df.columns:
+                    total_entries += df[time_col].notna().sum()
+            st.metric("Total Entries", total_entries)
+        
+        with col2:
+            distances_with_data = 0
+            for distance in ['100m', '200m', '300m', '400m', '500m']:
+                time_col = f"{distance}_Time"
+                if time_col in df.columns and df[time_col].notna().any():
+                    distances_with_data += 1
+            st.metric("Distances with Data", distances_with_data)
+        
+        with col3:
+            if total_entries > 0:
+                # Find most recent entry
+                latest_date = None
+                for distance in ['100m', '200m', '300m', '400m', '500m']:
+                    date_col = f"{distance}_Date"
+                    if date_col in df.columns:
+                        dates = df[date_col].dropna()
+                        if not dates.empty:
+                            for date_str in dates:
+                                parsed_date = parse_date(date_str)
+                                if parsed_date and (latest_date is None or parsed_date > latest_date):
+                                    latest_date = parsed_date
+                
+                if latest_date:
+                    days_ago = (datetime.now().date() - latest_date.date()).days
+                    st.metric("Last Entry", f"{days_ago} days ago")
     
-    # Process data
-    data = process_data(df)
+    # Tips section
+    st.markdown("---")
+    st.subheader("💡 Tips for Best Results")
     
-    if not data:
-        st.error("No valid data found in the spreadsheet.")
-        return
+    tips_col1, tips_col2 = st.columns(2)
     
-    # Sidebar for navigation
-    st.sidebar.title("🏃‍♂️ Navigation")
-    page = st.sidebar.selectbox(
-        "Choose a view:",
-        ["📊 Overview", "📈 Individual Distances", "🌟 Performance Analysis", "📅 Seasonal Trends"]
-    )
+    with tips_col1:
+        st.markdown("""
+        **🎯 Data Entry Tips:**
+        - Be consistent with time formats
+        - Enter dates as DD-MM-YY (e.g., 27-12-24)
+        - Add data regularly for better trends
+        - Double-check your times before saving
+        """)
     
-    if page == "📊 Overview":
-        show_overview(data)
-    elif page == "📈 Individual Distances":
-        show_individual_distances(data)
-    elif page == "🌟 Performance Analysis":
-        show_performance_analysis(data)
-    elif page == "📅 Seasonal Trends":
-        show_seasonal_trends(data)
+    with tips_col2:
+        st.markdown("""
+        **📊 Dashboard Tips:**
+        - Refresh the page after adding new data
+        - Use different sections to analyze your progress
+        - Check seasonal trends for optimal training times
+        - Monitor consistency along with speed improvements
+        """)
 
 def show_overview(data):
     """Show overview dashboard"""
@@ -1023,6 +1233,43 @@ def show_seasonal_trends(data):
                     f"{avg_runs_per_week:.1f}",
                     f"{len(weekly_stats)} weeks tracked"
                 )
+
+# Main app
+def main():
+    st.markdown('<div class="main-header">🏃‍♂️ Dad\'s Running Performance Dashboard</div>', unsafe_allow_html=True)
+    
+    # Load data
+    with st.spinner("Loading running data..."):
+        df = load_data()
+    
+    if df is None:
+        st.error("Could not load data. Please check the Google Sheets link.")
+        return
+    
+    # Process data
+    data = process_data(df)
+    
+    if not data:
+        st.error("No valid data found in the spreadsheet.")
+        return
+    
+    # Sidebar for navigation
+    st.sidebar.title("🏃‍♂️ Navigation")
+    page = st.sidebar.selectbox(
+        "Choose a view:",
+        ["📊 Overview", "📈 Individual Distances", "🌟 Performance Analysis", "📅 Seasonal Trends", "📝 Add New Data"]
+    )
+    
+    if page == "📊 Overview":
+        show_overview(data)
+    elif page == "📈 Individual Distances":
+        show_individual_distances(data)
+    elif page == "🌟 Performance Analysis":
+        show_performance_analysis(data)
+    elif page == "📅 Seasonal Trends":
+        show_seasonal_trends(data)
+    elif page == "📝 Add New Data":
+        show_data_entry_section()
 
 if __name__ == "__main__":
     main()
