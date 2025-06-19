@@ -233,12 +233,13 @@ def create_performance_chart(data, distance):
     return fig
 
 def create_seasonal_analysis(data):
-    """Create seasonal performance analysis"""
+    """Create comprehensive seasonal performance analysis"""
     all_data = []
     for distance, df in data.items():
         if not df.empty:
             df_copy = df.copy()
             df_copy['month'] = df_copy['date'].dt.month
+            df_copy['month_name'] = df_copy['date'].dt.strftime('%B')
             df_copy['season'] = df_copy['month'].map({
                 12: 'Winter', 1: 'Winter', 2: 'Winter',
                 3: 'Spring', 4: 'Spring', 5: 'Spring',
@@ -248,18 +249,254 @@ def create_seasonal_analysis(data):
             all_data.append(df_copy)
     
     if not all_data:
+        return None, None, None
+    
+    combined = pd.concat(all_data, ignore_index=True)
+    
+    # 1. Seasonal comparison by distance
+    seasonal_stats = combined.groupby(['distance', 'season']).agg({
+        'time_seconds': ['mean', 'min', 'count', 'std']
+    }).round(2)
+    seasonal_stats.columns = ['avg_time', 'best_time', 'run_count', 'consistency']
+    seasonal_stats = seasonal_stats.reset_index()
+    
+    # Create subplots for each distance
+    distances = sorted(combined['distance'].unique())
+    fig_seasonal = make_subplots(
+        rows=2, cols=3,
+        subplot_titles=[f"{dist} Performance by Season" for dist in distances] + ["Overall Seasonal Trends"],
+        specs=[[{"secondary_y": False}, {"secondary_y": False}, {"secondary_y": False}],
+               [{"secondary_y": False}, {"secondary_y": False}, {"colspan": 1}]]
+    )
+    
+    colors = ['#FF6B35', '#F7931E', '#FFD23F', '#06FFA5', '#2E86AB']
+    season_order = ['Spring', 'Summer', 'Autumn', 'Winter']
+    
+    # Plot each distance separately
+    for i, distance in enumerate(distances):
+        row = (i // 3) + 1
+        col = (i % 3) + 1
+        
+        distance_data = seasonal_stats[seasonal_stats['distance'] == distance]
+        
+        # Only plot if we have data for multiple seasons
+        if len(distance_data) > 1:
+            fig_seasonal.add_trace(
+                go.Bar(
+                    x=distance_data['season'],
+                    y=distance_data['avg_time'],
+                    name=f"{distance} Avg",
+                    marker_color=colors[i % len(colors)],
+                    showlegend=False,
+                    text=[f"{t:.1f}s" for t in distance_data['avg_time']],
+                    textposition='auto'
+                ),
+                row=row, col=col
+            )
+    
+    # Overall seasonal performance (normalized scores)
+    if len(distances) > 1:
+        seasonal_normalized = create_normalized_seasonal_scores(seasonal_stats, distances)
+        if seasonal_normalized is not None:
+            fig_seasonal.add_trace(
+                go.Bar(
+                    x=seasonal_normalized['season'],
+                    y=seasonal_normalized['combined_score'],
+                    name="Combined Performance",
+                    marker_color='#764ba2',
+                    showlegend=False,
+                    text=[f"{s:.1f}" for s in seasonal_normalized['combined_score']],
+                    textposition='auto'
+                ),
+                row=2, col=3
+            )
+    
+    fig_seasonal.update_layout(
+        title="Seasonal Performance Analysis by Distance",
+        template='plotly_white',
+        height=600
+    )
+    
+    # 2. Monthly detailed analysis
+    monthly_stats = combined.groupby(['distance', 'month_name']).agg({
+        'time_seconds': ['mean', 'min', 'count']
+    }).round(2)
+    monthly_stats.columns = ['avg_time', 'best_time', 'run_count']
+    monthly_stats = monthly_stats.reset_index()
+    
+    # 3. Best performing periods analysis
+    best_periods = analyze_best_periods(combined)
+    
+    return fig_seasonal, monthly_stats, best_periods
+
+def create_normalized_seasonal_scores(seasonal_stats, distances):
+    """Create normalized performance scores for combined seasonal analysis"""
+    try:
+        normalized_data = []
+        
+        for season in ['Spring', 'Summer', 'Autumn', 'Winter']:
+            season_data = seasonal_stats[seasonal_stats['season'] == season]
+            if len(season_data) == 0:
+                continue
+                
+            # Calculate normalized scores (lower time = higher score)
+            scores = []
+            for distance in distances:
+                dist_data = season_data[season_data['distance'] == distance]
+                if len(dist_data) > 0:
+                    time_val = dist_data['avg_time'].iloc[0]
+                    # Normalize based on distance expectations
+                    if distance == '100m':
+                        score = max(0, 100 - (time_val - 18) * 10)  # Expected ~18-20s
+                    elif distance == '200m':
+                        score = max(0, 100 - (time_val - 40) * 5)   # Expected ~40-45s
+                    elif distance == '300m':
+                        score = max(0, 100 - (time_val - 70) * 3)   # Expected ~70-80s
+                    elif distance == '400m':
+                        score = max(0, 100 - (time_val - 100) * 2)  # Expected ~100-110s
+                    elif distance == '500m':
+                        score = max(0, 100 - (time_val - 130) * 1.5) # Expected ~130-150s
+                    else:
+                        score = 50  # Default
+                    scores.append(score)
+            
+            if scores:
+                combined_score = np.mean(scores)
+                normalized_data.append({
+                    'season': season,
+                    'combined_score': combined_score,
+                    'distance_count': len(scores)
+                })
+        
+        return pd.DataFrame(normalized_data) if normalized_data else None
+    except:
+        return None
+
+def analyze_best_periods(combined_data):
+    """Analyze best performing periods"""
+    try:
+        # Monthly analysis
+        monthly_performance = combined_data.groupby(['month', 'distance']).agg({
+            'time_seconds': ['mean', 'count']
+        }).round(2)
+        monthly_performance.columns = ['avg_time', 'run_count']
+        monthly_performance = monthly_performance.reset_index()
+        
+        # Find best month for each distance
+        best_months = {}
+        for distance in combined_data['distance'].unique():
+            dist_data = monthly_performance[monthly_performance['distance'] == distance]
+            if len(dist_data) > 0:
+                best_month_idx = dist_data['avg_time'].idxmin()
+                best_month_data = dist_data.loc[best_month_idx]
+                best_months[distance] = {
+                    'month': best_month_data['month'],
+                    'avg_time': best_month_data['avg_time'],
+                    'run_count': best_month_data['run_count']
+                }
+        
+        # Seasonal analysis
+        seasonal_performance = combined_data.groupby(['season', 'distance']).agg({
+            'time_seconds': ['mean', 'count']
+        }).round(2)
+        seasonal_performance.columns = ['avg_time', 'run_count']
+        seasonal_performance = seasonal_performance.reset_index()
+        
+        return {
+            'best_months': best_months,
+            'monthly_data': monthly_performance,
+            'seasonal_data': seasonal_performance
+        }
+    except:
+        return None
+
+def create_monthly_heatmap(data):
+    """Create a heatmap showing performance across months and distances"""
+    all_data = []
+    for distance, df in data.items():
+        if not df.empty:
+            df_copy = df.copy()
+            df_copy['month'] = df_copy['date'].dt.month
+            df_copy['month_name'] = df_copy['date'].dt.strftime('%B')
+            all_data.append(df_copy)
+    
+    if not all_data:
         return None
     
     combined = pd.concat(all_data, ignore_index=True)
-    seasonal_avg = combined.groupby(['distance', 'season'])['time_seconds'].mean().reset_index()
+    
+    # Create pivot table for heatmap
+    heatmap_data = combined.groupby(['distance', 'month_name'])['time_seconds'].mean().unstack(fill_value=0)
+    
+    # Order months correctly
+    month_order = ['January', 'February', 'March', 'April', 'May', 'June',
+                   'July', 'August', 'September', 'October', 'November', 'December']
+    
+    # Reorder columns to match month order
+    available_months = [month for month in month_order if month in heatmap_data.columns]
+    heatmap_data = heatmap_data[available_months]
+    
+    # Replace 0s with NaN for better visualization
+    heatmap_data = heatmap_data.replace(0, np.nan)
+    
+    fig = px.imshow(
+        heatmap_data,
+        title="Performance Heatmap: Average Times by Month and Distance",
+        labels={'x': 'Month', 'y': 'Distance', 'color': 'Avg Time (seconds)'},
+        color_continuous_scale='RdYlBu_r',  # Red = slower, Blue = faster
+        aspect='auto'
+    )
+    
+    fig.update_layout(
+        template='plotly_white',
+        height=400
+    )
+    
+    return fig
+
+def create_improvement_by_season_chart(data):
+    """Show improvement trends by season"""
+    all_data = []
+    for distance, df in data.items():
+        if len(df) >= 3:  # Need enough data points
+            df_copy = df.copy()
+            df_copy['month'] = df_copy['date'].dt.month
+            df_copy['season'] = df_copy['month'].map({
+                12: 'Winter', 1: 'Winter', 2: 'Winter',
+                3: 'Spring', 4: 'Spring', 5: 'Spring',
+                6: 'Summer', 7: 'Summer', 8: 'Summer',
+                9: 'Autumn', 10: 'Autumn', 11: 'Autumn'
+            })
+            
+            # Calculate improvement within each season
+            seasonal_improvements = []
+            for season in df_copy['season'].unique():
+                season_data = df_copy[df_copy['season'] == season].sort_values('date')
+                if len(season_data) >= 2:
+                    first_time = season_data.iloc[0]['time_seconds']
+                    best_time = season_data['time_seconds'].min()
+                    improvement = ((first_time - best_time) / first_time) * 100
+                    seasonal_improvements.append({
+                        'distance': distance,
+                        'season': season,
+                        'improvement': improvement,
+                        'runs': len(season_data)
+                    })
+            
+            all_data.extend(seasonal_improvements)
+    
+    if not all_data:
+        return None
+    
+    improvement_df = pd.DataFrame(all_data)
     
     fig = px.bar(
-        seasonal_avg,
+        improvement_df,
         x='season',
-        y='time_seconds',
+        y='improvement',
         color='distance',
-        title="Average Performance by Season",
-        labels={'time_seconds': 'Average Time (seconds)'},
+        title="Performance Improvement by Season (%)",
+        labels={'improvement': 'Improvement (%)', 'season': 'Season'},
         category_orders={'season': ['Spring', 'Summer', 'Autumn', 'Winter']}
     )
     
@@ -622,45 +859,170 @@ def show_performance_analysis(data):
             st.plotly_chart(fig, use_container_width=True)
 
 def show_seasonal_trends(data):
-    """Show seasonal trends analysis"""
-    st.header("📅 Seasonal Performance Trends")
+    """Show enhanced seasonal trends analysis"""
+    st.header("📅 Seasonal Performance Analysis")
     
-    seasonal_chart = create_seasonal_analysis(data)
+    # Enhanced seasonal analysis
+    seasonal_chart, monthly_stats, best_periods = create_seasonal_analysis(data)
+    
     if seasonal_chart:
         st.plotly_chart(seasonal_chart, use_container_width=True)
+        
+        # Performance insights
+        if best_periods and 'best_months' in best_periods:
+            st.subheader("🏆 Peak Performance Periods")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**🌟 Best Months by Distance:**")
+                for distance, info in best_periods['best_months'].items():
+                    month_name = pd.to_datetime(f"2024-{info['month']}-01").strftime('%B')
+                    st.write(f"• **{distance}**: {month_name} ({format_time(info['avg_time'])} avg)")
+            
+            with col2:
+                # Find overall best season
+                if 'seasonal_data' in best_periods:
+                    seasonal_avg = best_periods['seasonal_data'].groupby('season')['avg_time'].mean()
+                    best_season = seasonal_avg.idxmin()
+                    best_season_time = seasonal_avg.min()
+                    
+                    st.markdown("**🎯 Performance Summary:**")
+                    st.write(f"• **Best Season**: {best_season}")
+                    st.write(f"• **Best Average**: {format_time(best_season_time)}")
+                    
+                    # Count runs by season
+                    season_counts = best_periods['seasonal_data'].groupby('season')['run_count'].sum()
+                    most_active_season = season_counts.idxmax()
+                    st.write(f"• **Most Active**: {most_active_season} ({season_counts[most_active_season]} runs)")
     
-    # Monthly breakdown
+    # Monthly heatmap
+    st.subheader("🔥 Performance Heatmap")
+    heatmap = create_monthly_heatmap(data)
+    if heatmap:
+        st.plotly_chart(heatmap, use_container_width=True)
+        st.caption("🔴 Slower times → 🔵 Faster times. Darker blue = better performance!")
+    
+    # Improvement by season
+    st.subheader("📈 Seasonal Improvement Trends")
+    improvement_chart = create_improvement_by_season_chart(data)
+    if improvement_chart:
+        st.plotly_chart(improvement_chart, use_container_width=True)
+        st.caption("Shows percentage improvement within each season (first run vs best run in that season)")
+    
+    # Detailed statistics tables
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📊 Seasonal Statistics")
+        if seasonal_chart and monthly_stats is not None:
+            # Create seasonal summary
+            seasonal_summary = monthly_stats.groupby([
+                monthly_stats['month_name'].map({
+                    'January': 'Winter', 'February': 'Winter', 'March': 'Spring',
+                    'April': 'Spring', 'May': 'Spring', 'June': 'Summer',
+                    'July': 'Summer', 'August': 'Summer', 'September': 'Autumn',
+                    'October': 'Autumn', 'November': 'Autumn', 'December': 'Winter'
+                }),
+                'distance'
+            ]).agg({
+                'avg_time': 'mean',
+                'best_time': 'min',
+                'run_count': 'sum'
+            }).round(2)
+            
+            seasonal_summary.index.names = ['Season', 'Distance']
+            st.dataframe(seasonal_summary, use_container_width=True)
+    
+    with col2:
+        st.subheader("🗓️ Monthly Breakdown")
+        if monthly_stats is not None and len(monthly_stats) > 0:
+            # Format monthly stats for display
+            display_monthly = monthly_stats.copy()
+            display_monthly['avg_time'] = display_monthly['avg_time'].apply(lambda x: f"{x:.1f}s")
+            display_monthly['best_time'] = display_monthly['best_time'].apply(lambda x: f"{x:.1f}s")
+            display_monthly.columns = ['Distance', 'Month', 'Avg Time', 'Best Time', 'Runs']
+            
+            st.dataframe(display_monthly, use_container_width=True)
+    
+    # Seasonal insights
+    if best_periods:
+        st.subheader("💡 Seasonal Insights")
+        
+        # Calculate some insights
+        insights = []
+        
+        if 'seasonal_data' in best_periods:
+            seasonal_data = best_periods['seasonal_data']
+            
+            # Find most consistent season (lowest std deviation)
+            seasonal_consistency = seasonal_data.groupby('season')['avg_time'].std()
+            most_consistent = seasonal_consistency.idxmin()
+            insights.append(f"🎯 **Most Consistent Season**: {most_consistent} (lowest time variation)")
+            
+            # Find season with most improvement potential
+            seasonal_ranges = seasonal_data.groupby('season')['avg_time'].apply(lambda x: x.max() - x.min())
+            highest_range = seasonal_ranges.idxmax()
+            if seasonal_ranges[highest_range] > 0:
+                insights.append(f"📈 **Biggest Improvement Range**: {highest_range} ({seasonal_ranges[highest_range]:.1f}s spread)")
+        
+        # Display insights
+        for insight in insights:
+            st.markdown(insight)
+    
+    # Performance calendar view
+    st.subheader("📅 Training Calendar Analysis")
+    
+    # Combine all data for calendar analysis
     all_data = []
     for distance, df in data.items():
         if not df.empty:
             df_copy = df.copy()
-            df_copy['month'] = df_copy['date'].dt.month
-            df_copy['month_name'] = df_copy['date'].dt.strftime('%B')
+            df_copy['distance'] = distance
             all_data.append(df_copy)
     
     if all_data:
         combined = pd.concat(all_data, ignore_index=True)
         
-        # Monthly performance summary
-        st.subheader("📊 Monthly Performance Summary")
-        monthly_stats = combined.groupby(['distance', 'month_name']).agg({
-            'time_seconds': ['count', 'mean', 'min']
+        # Group by week of year
+        combined['week'] = combined['date'].dt.isocalendar().week
+        combined['year'] = combined['date'].dt.year
+        
+        weekly_stats = combined.groupby(['year', 'week']).agg({
+            'time_seconds': ['count', 'mean'],
+            'distance': lambda x: len(x.unique())
         }).round(2)
         
-        monthly_stats.columns = ['Runs', 'Avg Time (s)', 'Best Time (s)']
-        st.dataframe(monthly_stats, use_container_width=True)
+        weekly_stats.columns = ['Total Runs', 'Avg Time', 'Distances Trained']
         
-        # Best months analysis
-        st.subheader("🏆 Best Performing Months")
-        best_months = combined.groupby('month_name')['time_seconds'].mean().sort_values()
-        
-        fig = px.bar(
-            x=best_months.index,
-            y=best_months.values,
-            title="Average Performance by Month (All Distances)",
-            labels={'x': 'Month', 'y': 'Average Time (seconds)'}
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        if len(weekly_stats) > 0:
+            # Find most active weeks
+            most_active_week = weekly_stats['Total Runs'].idxmax()
+            best_performance_week = weekly_stats['Avg Time'].idxmin()
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric(
+                    "Most Active Week", 
+                    f"Week {most_active_week[1]}, {most_active_week[0]}",
+                    f"{weekly_stats.loc[most_active_week, 'Total Runs']} runs"
+                )
+            
+            with col2:
+                st.metric(
+                    "Best Performance Week",
+                    f"Week {best_performance_week[1]}, {best_performance_week[0]}",
+                    f"{format_time(weekly_stats.loc[best_performance_week, 'Avg Time'])} avg"
+                )
+            
+            with col3:
+                avg_runs_per_week = weekly_stats['Total Runs'].mean()
+                st.metric(
+                    "Avg Runs/Week",
+                    f"{avg_runs_per_week:.1f}",
+                    f"{len(weekly_stats)} weeks tracked"
+                )
 
 if __name__ == "__main__":
     main()
