@@ -664,7 +664,7 @@ def main():
     st.sidebar.title("🏃‍♂️ Navigation")
     page = st.sidebar.selectbox(
         "Choose a view:",
-        ["📊 Overview", "📈 Individual Distances", "🌟 Performance Analysis", "📅 Seasonal Trends", "➕ Add New Data"]
+        ["📊 Overview", "📈 Individual Distances", "🌟 Performance Analysis", "📅 Seasonal Trends"]
     )
     
     if page == "📊 Overview":
@@ -675,8 +675,6 @@ def main():
         show_performance_analysis(data)
     elif page == "📅 Seasonal Trends":
         show_seasonal_trends(data)
-    elif page == "➕ Add New Data":
-        show_data_entry()
 
 def show_overview(data):
     """Show overview dashboard"""
@@ -1019,201 +1017,7 @@ def show_seasonal_trends(data):
                 )
             
             with col3:
-                def show_data_entry():
-    """Show data entry page"""
-    st.header("➕ Add New Running Data")
-    
-    # Information about data entry options
-    st.info("""
-    🎯 **Recommended Approach**: Add data directly to your Google Sheets for best results!
-    
-    **Why Google Sheets is better:**
-    • ✅ Data persists permanently
-    • ✅ Easy to edit/correct mistakes
-    • ✅ Can add multiple entries quickly
-    • ✅ Automatic backup
-    • ✅ Access from any device
-    """)
-    
-    # Quick link to Google Sheets
-    st.markdown("""
-    ### 🔗 Quick Access to Your Google Sheet
-    [**Open Your Running Data Sheet →**](https://docs.google.com/spreadsheets/d/1CUM-P3wB2zxHrbmw1JM7vrxtqhtnsasy34NqaIkke_0/edit)
-    
-    **To add data in Google Sheets:**
-    1. Click the link above
-    2. Find an empty row
-    3. Add your time and date in the correct columns
-    4. Format: Time as `19.5` or `1.10.5`, Date as `DD-MM-YY`
-    5. Return to this dashboard and refresh!
-    """)
-    
-    st.divider()
-    
-    # Alternative: Quick entry form (demonstration purposes)
-    st.subheader("🚀 Quick Entry Form")
-    st.warning("""
-    ⚠️ **Note**: This form is for demonstration only. 
-    Data entered here will NOT be saved permanently and will disappear when you refresh the page.
-    For permanent data storage, use Google Sheets above.
-    """)
-    
-    with st.form("data_entry_form"):
-        st.markdown("**Enter new running data:**")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            distance = st.selectbox(
-                "Distance",
-                ["100m", "200m", "300m", "400m", "500m"]
-            )
-            
-            # Time input with format help
-            time_input = st.text_input(
-                "Time",
-                placeholder="e.g., 19.5 or 1.10.5",
-                help="Format: seconds (19.5) or minutes.seconds.tenths (1.10.5)"
-            )
-        
-        with col2:
-            date_input = st.date_input(
-                "Date",
-                value=datetime.now().date(),
-                help="Date of the run"
-            )
-            
-            notes = st.text_input(
-                "Notes (optional)",
-                placeholder="Weather, feeling, etc."
-            )
-        
-        submitted = st.form_submit_button("Add Entry", type="primary")
-        
-        if submitted:
-            if time_input and date_input:
-                # Validate time format
-                parsed_time = parse_time_to_seconds(time_input)
-                if parsed_time is not None:
-                    # Format date for display
-                    formatted_date = date_input.strftime('%d-%m-%y')
-                    
-                    st.success(f"""
-                    ✅ **Entry Added Successfully!**
-                    
-                    - **Distance**: {distance}
-                    - **Time**: {format_time(parsed_time)} ({time_input})
-                    - **Date**: {formatted_date}
-                    - **Notes**: {notes if notes else "None"}
-                    
-                    ⚠️ **Remember**: This data is only temporary. 
-                    Add it to your Google Sheet for permanent storage!
-                    """)
-                    
-                    # Show how to add to Google Sheets
-                    st.info(f"""
-                    **To save permanently, add this to your Google Sheet:**
-                    
-                    1. Go to the {distance} columns in your sheet
-                    2. In {distance}_Time column: `{time_input}`
-                    3. In {distance}_Date column: `{formatted_date}`
-                    """)
-                else:
-                    st.error("❌ Invalid time format. Use formats like: 19.5, 1.10.5, or 41.0")
-            else:
-                st.error("❌ Please fill in both time and date fields.")
-    
-    st.divider()
-    
-    # Data format guide
-    st.subheader("📋 Data Format Guide")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        **⏱️ Time Formats:**
-        - `19.5` = 19.5 seconds
-        - `1.10.0` = 1 minute, 10.0 seconds  
-        - `1.10.5` = 1 minute, 10.5 seconds
-        - `41.0` = 41.0 seconds
-        - `2.15.0` = 2 minutes, 15.0 seconds
-        """)
-    
-    with col2:
-        st.markdown("""
-        **📅 Date Formats:**
-        - Use: `DD-MM-YY` format
-        - Example: `19-05-25` for May 19, 2025
-        - Example: `03-12-24` for December 3, 2024
-        """)
-    
-    # Show current data structure
-    st.subheader("📊 Current Data Overview")
-    
-    # Load and display current data summary
-    df = load_data()
-    if df is not None:
-        data = process_data(df)
-        if data:
-            summary_data = []
-            for distance, distance_df in data.items():
-                if not distance_df.empty:
-                    summary_data.append({
-                        'Distance': distance,
-                        'Total Runs': len(distance_df),
-                        'Latest Run': distance_df['date'].max().strftime('%d-%m-%Y'),
-                        'Personal Record': format_time(distance_df['time_seconds'].min()),
-                        'Last Time': format_time(distance_df.iloc[-1]['time_seconds'])
-                    })
-            
-            if summary_data:
-                summary_df = pd.DataFrame(summary_data)
-                st.dataframe(summary_df, use_container_width=True)
-            else:
-                st.info("No data available yet. Add some runs to get started!")
-    
-    # Tips for efficient data entry
-    st.subheader("💡 Pro Tips for Data Entry")
-    
-    tips = [
-        "🏃‍♂️ **Add data immediately** after each run while it's fresh",
-        "📱 **Use your phone** to add data to Google Sheets on the go",
-        "🗓️ **Be consistent** with date formats (DD-MM-YY)",
-        "⏱️ **Double-check times** for accuracy",
-        "📝 **Add notes** about conditions (weather, how you felt, etc.)",
-        "🔄 **Refresh the dashboard** after adding data to see updates",
-        "💾 **Backup your data** occasionally by downloading the sheet"
-    ]
-    
-    for tip in tips:
-        st.markdown(tip)
-    
-    # Advanced data management
-    with st.expander("🔧 Advanced Data Management"):
-        st.markdown("""
-        **Bulk Data Entry:**
-        - Copy multiple rows at once in Google Sheets
-        - Use autofill for dates (drag down from a cell)
-        - Sort your data by date for better organization
-        
-        **Data Validation:**
-        - Check for duplicate entries occasionally
-        - Ensure all times are in consistent format
-        - Verify dates are correct (easy to mix up day/month)
-        
-        **Export Options:**
-        - Download your Google Sheet as Excel/CSV for backup
-        - Share the sheet with family members
-        - Use Google Sheets mobile app for quick entry
-        
-        **Common Mistakes to Avoid:**
-        - Don't use different time formats in the same column
-        - Don't leave empty rows between data
-        - Don't change column headers (100m_Time, 100m_Date, etc.)
-        """)
-
-                    avg_runs_per_week = weekly_stats['Total Runs'].mean()
+                avg_runs_per_week = weekly_stats['Total Runs'].mean()
                 st.metric(
                     "Avg Runs/Week",
                     f"{avg_runs_per_week:.1f}",
