@@ -1236,7 +1236,7 @@ def show_seasonal_trends(data):
 
 # Main app
 def main():
-    st.markdown('<div class="main-header">🏃‍♂️ Dad\'s Running Performance Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">🏃‍♂️ Aad\'s Running Performance Dashboard</div>', unsafe_allow_html=True)
     
     # Load data
     with st.spinner("Loading running data..."):
